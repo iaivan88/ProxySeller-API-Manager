@@ -391,7 +391,7 @@ class ProxySellerAPI:
         print("\nПредустановленные паки стран:")
         for key, preset in country_presets.items():
             print(f"{key}. {preset['name']}")
-        print("0. Ручной ввод стран")
+        print("0. Ручной ввод стран (по умолчанию")
 
         # Select country preset or manual input
         preset_choice = input("\nВыберите пак или 0 для ручного ввода: ")
