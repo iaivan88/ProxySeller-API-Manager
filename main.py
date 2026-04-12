@@ -1,66 +1,110 @@
 import requests
-import time
 import os
 import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class APIResponse:
+    """Standardized API response"""
+    success: bool
+    data: Optional[Any] = None
+    error: Optional[str] = None
 
 
 class ProxySellerAPI:
+    API_VERSION = "v1"
+    BASE_DOMAIN = "https://proxy-seller.com/personal/api"
+
     def __init__(self):
         self.api_key = self.load_api_key()
-        self.base_url = f'https://proxy-seller.com/personal/api/v1/{self.api_key}/resident'
+        self.base_url = f'{self.BASE_DOMAIN}/{self.API_VERSION}/{self.api_key}/resident'
+        self.session = self._create_session()
         self.output_file = "proxy_list.txt"
-        self.previous_countries_file = "previous_countries.json"
+        self.results_dir = "Results"
 
-    def load_api_key(self):
-        # Try to load API key from file
+    def _results_filepath(self, filename: str) -> str:
+        os.makedirs(self.results_dir, exist_ok=True)
+        return os.path.join(self.results_dir, filename)
+
+    def _create_session(self) -> requests.Session:
+        session = requests.Session()
+        session.headers.update({
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        })
+        return session
+
+    def _make_request(self, method: str, endpoint: str, **kwargs) -> APIResponse:
+        """HTTP request to resident API relative to base_url (e.g. lists, list/add)."""
+        url = f"{self.base_url}/{endpoint}"
         try:
-            if os.path.exists("api_key.txt"):
-                with open("api_key.txt", "r") as file:
-                    return file.read().strip()
-        except:
-            pass
+            response = self.session.request(method, url, **kwargs)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    return APIResponse(success=True, data=data.get("data"))
+                errors = data.get("errors", "Unknown error")
+                return APIResponse(success=False, error=str(errors))
+            return APIResponse(
+                success=False,
+                error=f"HTTP {response.status_code}: {response.text}",
+            )
+        except requests.RequestException as e:
+            return APIResponse(success=False, error=f"Request failed: {str(e)}")
+        except json.JSONDecodeError as e:
+            return APIResponse(success=False, error=f"Invalid JSON response: {str(e)}")
+        except Exception as e:
+            return APIResponse(success=False, error=f"Unexpected error: {str(e)}")
 
-        # If file doesn't exist or there was an error, ask the user
-        api_key = input("Введите ваш API-ключ для ProxySeller: ")
+    def load_api_key(self, key_file: str = "api_key.txt") -> str:
+        if os.path.exists(key_file):
+            try:
+                with open(key_file, "r", encoding="utf-8") as file:
+                    api_key = file.read().strip()
+                    if api_key:
+                        return api_key
+            except (OSError, UnicodeDecodeError) as e:
+                print(f"Предупреждение: не удалось прочитать {key_file}: {e}")
 
-        # Save the API key for future use
-        with open("api_key.txt", "w") as file:
-            file.write(api_key)
+        api_key = input("Введите ваш API-ключ для ProxySeller: ").strip()
+        if not api_key:
+            raise ValueError("API key cannot be empty")
+
+        try:
+            with open(key_file, "w", encoding="utf-8") as file:
+                file.write(api_key)
+        except OSError as e:
+            print(f"Предупреждение: не удалось сохранить ключ в {key_file}: {e}")
 
         return api_key
 
-    def get_lists(self):
+    def get_lists(self) -> List[Dict]:
         """Get all existing IP lists"""
-        url = f'{self.base_url}/lists'
+        response = self._make_request("GET", "lists")
+        if not response.success:
+            print(f"Ошибка при получении списков: {response.error}")
+            return []
 
-        try:
-            response = requests.get(url)
+        data = response.data
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "items" in data:
+            return data["items"]
 
-            if response.status_code == 200:
-                data = response.json()
-
-                if data.get("status") == "success":
-                    # Based on the debug output, data itself contains the lists
-                    if isinstance(data.get("data"), list):
-                        return data["data"]
-                    # Or it might be nested under 'items' as in the documentation
-                    elif isinstance(data.get("data"), dict) and "items" in data["data"]:
-                        return data["data"]["items"]
-                    else:
-                        print("Ошибка: Неожиданная структура данных в ответе.")
-                        print("Структура ответа:", data)
-                        return []
-                else:
-                    print("Ошибка: Некорректный формат ответа сервера.")
-                    if "errors" in data and data["errors"]:
-                        print("Сообщение об ошибке:", data["errors"])
-            else:
-                print(f'Ошибка при получении списка. Код ошибки: {response.status_code}')
-                print('Ответ сервера:', response.text)
-        except Exception as e:
-            print(f"Произошла ошибка: {str(e)}")
-
+        print("Ошибка: Неожиданная структура данных в ответе.")
         return []
+
+    def _extract_countries(self, geo_info) -> List[str]:
+        countries: List[str] = []
+        if isinstance(geo_info, list):
+            for geo in geo_info:
+                if isinstance(geo, dict) and "country" in geo:
+                    countries.append(geo["country"])
+        elif isinstance(geo_info, dict) and "country" in geo_info:
+            countries.append(geo_info["country"])
+        return countries
 
     def display_lists(self, lists):
         """Display lists in a simple, comfortable format"""
@@ -74,22 +118,8 @@ class ProxySellerAPI:
             try:
                 list_id = item.get('id', 'N/A')
                 title = item.get('title', 'Без названия')
-
-                # Handle geo information - showing all countries
-                countries = []
-                if 'geo' in item:
-                    geo_info = item['geo']
-                    # Check if geo is a list of country objects
-                    if isinstance(geo_info, list):
-                        for geo in geo_info:
-                            if isinstance(geo, dict) and 'country' in geo:
-                                countries.append(geo['country'])
-                    # Or if it's a single country object
-                    elif isinstance(geo_info, dict) and 'country' in geo_info:
-                        countries.append(geo_info['country'])
-
-                # Format the countries list
-                countries_str = ", ".join(countries) if countries else 'N/A'
+                countries = self._extract_countries(item.get("geo", []))
+                countries_str = ", ".join(countries) if countries else "N/A"
 
                 print(f"{i}. ID: {list_id} - {title} - Страны: {countries_str}")
             except Exception as e:
@@ -197,20 +227,8 @@ class ProxySellerAPI:
                 list_id = selected_list.get('id')
                 list_title = selected_list.get('title', f'proxies_{list_id}')
 
-                # Get country information for filename
-                countries = []
-                if 'geo' in selected_list:
-                    geo_info = selected_list['geo']
-                    # Check if geo is a list of country objects
-                    if isinstance(geo_info, list):
-                        for geo in geo_info:
-                            if isinstance(geo, dict) and 'country' in geo:
-                                countries.append(geo['country'])
-                    # Or if it's a single country object
-                    elif isinstance(geo_info, dict) and 'country' in geo_info:
-                        countries.append(geo_info['country'])
-
-                countries_str = "_".join(countries) if countries else 'no_country'
+                countries = self._extract_countries(selected_list.get("geo", []))
+                countries_str = "_".join(countries) if countries else "no_country"
 
                 # Make API request to download proxies
                 url = f'https://proxy-seller.com/personal/api/v1/{self.api_key}/proxy/download/resident'
@@ -224,12 +242,12 @@ class ProxySellerAPI:
                 print(f"\nЗагрузка прокси из списка '{list_title}'...")
 
                 try:
-                    response = requests.get(url, params=params)
+                    response = self.session.get(url, params=params)
 
                     if response.status_code == 200:
                         # Create a better filename based on list title and countries
                         safe_title = ''.join(c for c in list_title if c.isalnum() or c in ' _-').replace(' ', '_')
-                        filename = f"{safe_title}_{countries_str}.{file_ext}"
+                        filename = self._results_filepath(f"{safe_title}_{countries_str}.{file_ext}")
 
                         # Keep track of list names for merged filename
                         selected_list_names.append(safe_title)
@@ -245,28 +263,21 @@ class ProxySellerAPI:
                             formatted_lines = []
                             for line in lines:
                                 try:
-                                    # Parse the line
-                                    auth, host_port = line.split('@', 1)
-                                    login, password = auth.split(':', 1)
-                                    host, port = host_port.split(':', 1)
+                                    auth, host_port = line.split("@", 1)
+                                    login, password = auth.split(":", 1)
+                                    host, port = host_port.split(":", 1)
 
-                                    # Reformat according to user's choice
                                     if proxy_format == 2:
-                                        # login:password:host:port
                                         formatted = f"{login}:{password}:{host}:{port}"
                                     elif proxy_format == 3:
-                                        # host:port:login:password
                                         formatted = f"{host}:{port}:{login}:{password}"
                                     elif proxy_format == 4:
-                                        # host:port@login:password
                                         formatted = f"{host}:{port}@{login}:{password}"
                                     else:
-                                        # Default format (shouldn't happen here)
                                         formatted = line
 
                                     formatted_lines.append(formatted)
-                                except:
-                                    # If parsing fails, keep the original line
+                                except Exception:
                                     formatted_lines.append(line)
 
                             # Join all formatted lines
@@ -281,17 +292,16 @@ class ProxySellerAPI:
                         else:
                             # Save to individual file
                             if export_type in ["txt", "csv"]:
-                                with open(filename, "w") as file:
+                                with open(filename, "w", encoding="utf-8") as file:
                                     file.write(formatted_content)
                             elif export_type == "json":
                                 try:
                                     json_data = response.json()
-                                    with open(filename, "w") as file:
-                                        json.dump(json_data, file, indent=4)
+                                    with open(filename, "w", encoding="utf-8") as file:
+                                        json.dump(json_data, file, indent=4, ensure_ascii=False)
                                 except Exception as e:
                                     print(f"Ошибка при обработке JSON для списка '{list_title}': {str(e)}")
-                                    # Save raw content as fallback
-                                    with open(filename, "w") as file:
+                                    with open(filename, "w", encoding="utf-8") as file:
                                         file.write(formatted_content)
 
                             print(f"Прокси успешно загружены и сохранены в файл '{filename}'.")
@@ -314,10 +324,10 @@ class ProxySellerAPI:
                     # If more than 3 lists, use the first list name and a count
                     lists_part = f"{selected_list_names[0]}_and_{len(selected_list_names) - 1}_more"
 
-                merged_filename = f"{lists_part}.{file_ext}"
+                merged_filename = self._results_filepath(f"{lists_part}.{file_ext}")
 
                 try:
-                    with open(merged_filename, "w") as file:
+                    with open(merged_filename, "w", encoding="utf-8") as file:
                         file.write("\n".join(all_proxies))
 
                     print(f"\nВсе прокси успешно объединены и сохранены в файл '{merged_filename}'.")
@@ -330,33 +340,6 @@ class ProxySellerAPI:
             print("Ошибка: Введите числовое значение.")
         except Exception as e:
             print(f"Произошла ошибка: {str(e)}")
-
-    def load_previous_countries(self):
-        """Load previously used countries from a file"""
-        if os.path.exists(self.previous_countries_file):
-            try:
-                with open(self.previous_countries_file, "r") as file:
-                    return json.load(file)
-            except Exception as e:
-                print(f"Ошибка при загрузке предыдущих стран: {str(e)}")
-        return {}
-
-    def save_previous_countries(self, country, region="", city="", isp=""):
-        """Save used countries to a file"""
-        countries_data = self.load_previous_countries()
-
-        countries_data[country] = {
-            "region": region,
-            "city": city,
-            "isp": isp,
-            "last_used": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-        try:
-            with open(self.previous_countries_file, "w") as file:
-                json.dump(countries_data, file, indent=4)
-        except Exception as e:
-            print(f"Ошибка при сохранении предыдущих стран: {str(e)}")
 
     def create_lists(self):
         """Create one or multiple new IP lists with country presets"""
@@ -387,31 +370,29 @@ class ProxySellerAPI:
             num_lists = 1
             print("Ошибка ввода. Установлено значение по умолчанию: 1 список.")
 
-        # Display country presets
         print("\nПредустановленные паки стран:")
         for key, preset in country_presets.items():
             print(f"{key}. {preset['name']}")
-        print("0. Ручной ввод стран (по умолчанию")
+        print("0. Ручной ввод стран (по умолчанию)")
 
-        # Select country preset or manual input
-        preset_choice = input("\nВыберите пак или 0 для ручного ввода: ")
+        preset_choice = input("\nВыберите пак или 0 для ручного ввода: ").strip()
 
-        if preset_choice in country_presets:
-            country = country_presets[preset_choice]['countries']
+        if not preset_choice or preset_choice == "0":
+            country = input(
+                "Введите код или коды нескольких стран через запятую (https://www.iban.com/country-codes - коды стран): "
+            ).upper().replace(" ", "")
+        elif preset_choice in country_presets:
+            country = country_presets[preset_choice]["countries"]
             print(f"Выбран пак: {country_presets[preset_choice]['name']}")
-        elif preset_choice == "0":
-            country = input("Введите код или коды нескольких стран через запятую (https://www.iban.com/country-codes - коды стран): ").upper().replace(" ", "")
         else:
             print("Неверный выбор. Будет использован ручной ввод.")
-            country = input("Введите код или коды нескольких стран через запятую (https://www.iban.com/country-codes - коды стран):: ").upper().replace(" ", "")
+            country = input(
+                "Введите код или коды нескольких стран через запятую (https://www.iban.com/country-codes - коды стран): "
+            ).upper().replace(" ", "")
 
-        # Rest of the method remains the same as in the original implementation
         region = input("Введите регион (или оставьте пустым): ")
         city = input("Введите город (или оставьте пустым): ")
         isp = input("Введите провайдера (или оставьте пустым): ")
-
-        # Save the country for future use
-        self.save_previous_countries(country, region, city, isp)
 
         # Получаем информацию о портах
         try:
@@ -462,27 +443,18 @@ class ProxySellerAPI:
             }
 
             try:
-                response = requests.post(f'{self.base_url}/list/add', json=data)
-
-                if response.status_code == 200:
-                    response_data = response.json()
-
-                    if response_data.get("status") == "success" and "data" in response_data:
-                        proxy_data = response_data["data"]
-                        print(f"\n=== Список прокси '{list_title}' успешно создан ===")
-                        print(f"Название: {proxy_data.get('title', 'N/A')}")
-
-                        # Generate proxy list
-                        proxy_list = self.generate_proxy_list(proxy_data, num_ports, proxy_format)
-                        all_proxy_lists.extend(proxy_list)
-                        total_proxies += len(proxy_list)
-                    else:
-                        print("Ошибка: Некорректный формат ответа сервера.")
-                        if "errors" in response_data and response_data["errors"]:
-                            print("Сообщение об ошибке:", response_data["errors"])
+                response = self._make_request("POST", "list/add", json=data)
+                if response.success and isinstance(response.data, dict):
+                    proxy_data = response.data
+                    print(f"\n=== Список прокси '{list_title}' успешно создан ===")
+                    print(f"Название: {proxy_data.get('title', 'N/A')}")
+                    proxy_list = self.generate_proxy_list(proxy_data, num_ports, proxy_format)
+                    all_proxy_lists.extend(proxy_list)
+                    total_proxies += len(proxy_list)
                 else:
-                    print(f'Ошибка при создании списка. Код ошибки: {response.status_code}')
-                    print('Ответ сервера:', response.text)
+                    print("Ошибка при создании списка.")
+                    if response.error:
+                        print("Сообщение об ошибке:", response.error)
             except Exception as e:
                 print(f"Произошла ошибка: {str(e)}")
 
@@ -490,14 +462,15 @@ class ProxySellerAPI:
         if all_proxy_lists:
             # Create a safe filename
             safe_title = ''.join(c for c in title if c.isalnum() or c in ' _-').replace(' ', '_')
-            filename = f"{safe_title}_proxies.txt"
+            filename = self._results_filepath(f"{safe_title}_proxies.txt")
 
-            # Save to file
-            with open(filename, "w") as file:
-                file.write("\n".join(all_proxy_lists))
-
-            print(f"\nВсего создано {total_proxies} прокси в {num_lists} списках.")
-            print(f"Прокси сохранены в файл '{filename}'.")
+            try:
+                with open(filename, "w", encoding="utf-8") as file:
+                    file.write("\n".join(all_proxy_lists))
+                print(f"\nВсего создано {total_proxies} прокси в {num_lists} списках.")
+                print(f"Прокси сохранены в файл '{filename}'.")
+            except OSError as e:
+                print(f"Ошибка при сохранении файла '{filename}': {e}")
 
         return total_proxies
 
@@ -564,27 +537,17 @@ class ProxySellerAPI:
             # Ask for new name
             new_title = input("Введите новое название для списка: ")
 
-            # Make API request
-            url = f'{self.base_url}/list/rename'
             data = {
-                'id': list_id,
-                'title': new_title
+                "id": list_id,
+                "title": new_title,
             }
 
-            response = requests.post(url, json=data)
-
-            if response.status_code == 200:
-                response_data = response.json()
-
-                if response_data.get("status") == "success":
-                    print(f"Список успешно переименован в '{new_title}'.")
-                else:
-                    print("Ошибка: Некорректный формат ответа сервера.")
-                    if "errors" in response_data and response_data["errors"]:
-                        print("Сообщение об ошибке:", response_data["errors"])
+            response = self._make_request("POST", "list/rename", json=data)
+            if response.success:
+                print(f"Список успешно переименован в '{new_title}'.")
             else:
-                print(f'Ошибка при переименовании списка. Код ошибки: {response.status_code}')
-                print('Ответ сервера:', response.text)
+                print("Ошибка при переименовании списка.")
+                print("Сообщение об ошибке:", response.error)
         except ValueError:
             print("Ошибка: Введите числовое значение.")
         except Exception as e:
@@ -658,28 +621,17 @@ class ProxySellerAPI:
             # Delete each list
             deleted_count = 0
             for list_id, title in selected_lists:
-                # Make API request
-                url = f'{self.base_url}/list/delete'
-                data = {
-                    'id': list_id
-                }
+                data = {"id": list_id}
 
                 try:
-                    response = requests.delete(url, json=data)
-
-                    if response.status_code == 200:
-                        response_data = response.json()
-
-                        if response_data.get("status") == "success":
-                            print(f"Список '{title}' успешно удален.")
-                            deleted_count += 1
-                        else:
-                            print(f"Ошибка при удалении списка '{title}'.")
-                            if "errors" in response_data and response_data["errors"]:
-                                print("Сообщение об ошибке:", response_data["errors"])
+                    # Документация: тело запроса с полем id (JSON)
+                    response = self._make_request("DELETE", "list/delete", json=data)
+                    if response.success:
+                        print(f"Список '{title}' успешно удален.")
+                        deleted_count += 1
                     else:
-                        print(f'Ошибка при удалении списка "{title}". Код ошибки: {response.status_code}')
-                        print('Ответ сервера:', response.text)
+                        print(f"Ошибка при удалении списка '{title}'.")
+                        print("Сообщение об ошибке:", response.error)
                 except Exception as e:
                     print(f"Произошла ошибка при удалении списка '{title}': {str(e)}")
 
@@ -707,38 +659,46 @@ def display_menu():
 
 
 def main():
-    proxy_api = ProxySellerAPI()
+    try:
+        proxy_api = ProxySellerAPI()
 
-    while True:
-        choice = display_menu()
+        while True:
+            choice = display_menu()
 
-        if choice == "1":
-            lists = proxy_api.get_lists()
-            proxy_api.display_lists(lists)
-            input("\nНажмите Enter для продолжения...")
+            if choice == "1":
+                lists = proxy_api.get_lists()
+                proxy_api.display_lists(lists)
+                input("\nНажмите Enter для продолжения...")
 
-        elif choice == "2":
-            proxy_api.download_proxies()
-            input("\nНажмите Enter для продолжения...")
+            elif choice == "2":
+                proxy_api.download_proxies()
+                input("\nНажмите Enter для продолжения...")
 
-        elif choice == "3":
-            proxy_api.create_lists()
-            input("\nНажмите Enter для продолжения...")
+            elif choice == "3":
+                proxy_api.create_lists()
+                input("\nНажмите Enter для продолжения...")
 
-        elif choice == "4":
-            proxy_api.rename_list()
-            input("\nНажмите Enter для продолжения...")
+            elif choice == "4":
+                proxy_api.rename_list()
+                input("\nНажмите Enter для продолжения...")
 
-        elif choice == "5":
-            proxy_api.delete_list()
-            input("\nНажмите Enter для продолжения...")
+            elif choice == "5":
+                proxy_api.delete_list()
+                input("\nНажмите Enter для продолжения...")
 
-        elif choice == "0":
-            print("\nВыход из программы...")
-            break
+            elif choice == "0":
+                print("\nВыход из программы...")
+                break
 
-        else:
-            print("\nНеверный выбор. Пожалуйста, попробуйте снова.")
+            else:
+                print("\nНеверный выбор. Пожалуйста, попробуйте снова.")
+
+    except KeyboardInterrupt:
+        print("\n\nПрограмма прервана пользователем")
+    except ValueError as e:
+        print(f"\nОшибка: {e}")
+    except Exception as e:
+        print(f"\nКритическая ошибка: {e}")
 
 
 if __name__ == "__main__":
