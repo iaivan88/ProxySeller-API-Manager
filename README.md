@@ -1,68 +1,96 @@
 # ProxySeller API Manager
 
-A Python-based command-line tool for managing proxy lists through the ProxySeller API. This tool provides a user-friendly interface to create, download, rename, and delete proxy lists with various configuration options.
+Command-line Python tool for managing ProxySeller residential proxy lists.  
+It supports listing, downloading, creating, renaming, and deleting lists through the ProxySeller API.
 
-## Features
+## What This Tool Does
 
-- 📋 View existing proxy lists
-- ⬇️ Download proxies in multiple formats
-- ➕ Create new proxy lists with country presets
-- ✏️ Rename existing lists
-- 🗑️ Delete multiple lists at once
-- 🌍 Support for worldwide proxy locations
-- 🔒 Secure API key storage
-- 📊 Multiple export formats (TXT, CSV, JSON)
-- 🔄 Multiple proxy formats support
-- 📝 Batch operations support
+- View existing proxy lists
+- Download proxies from one or multiple lists
+- Create one or multiple lists with geo filters and presets
+- Rename an existing list
+- Delete multiple lists at once
+- Export downloaded proxies as TXT, CSV, or JSON
+- Save generated and downloaded files into `Results/`
 
-## Prerequisites
+## Requirements
 
-- Python 3.x
-- ProxySeller API key
-- `requests` library
+- Python 3.8+
+- A valid ProxySeller API key
 
 ## Installation
 
-1. Clone this repository or download the source code
-2. Install the required dependencies:
+1. Clone this repository.
+2. Install dependencies:
+
 ```bash
-pip install requests
+pip install -r requirements.txt
 ```
 
-## Usage
+Current dependency:
+- `requests>=2.28.0`
 
-1. Run the script:
+## Quick Start
+
+Run:
+
 ```bash
 python main.py
 ```
 
-2. Enter your ProxySeller API key when prompted (it will be saved for future use)
+On first launch, the app asks for your ProxySeller API key and stores it in `api_key.txt`.
 
-3. Use the menu interface to:
-   - Get existing IP lists
-   - Download proxies from existing lists
-   - Create new lists
-   - Rename lists
-   - Delete lists
+## Menu Actions
 
-## Proxy Formats
+When started, the CLI menu provides:
 
-The tool supports the following proxy formats:
+1. Get existing IP lists
+2. Download proxies from existing list(s)
+3. Create a new list (or multiple lists)
+4. Rename a list
+5. Delete list(s)
+0. Exit
+
+## Download Options
+
+### List Selection
+
+You can select lists by:
+- comma-separated numbers (`1,3,5`)
+- range syntax (`[10, 20]`)
+
+### Proxy Output Format
+
 - `login:password@host:port` (default)
 - `login:password:host:port`
 - `host:port:login:password`
 - `host:port@login:password`
 
-## Export Formats
+### Export Format
 
-Proxies can be exported in:
-- TXT (default)
-- CSV
-- JSON
+- `txt` (default)
+- `csv`
+- `json`
+
+### Merge Mode
+
+During download, you can merge proxies from selected lists into one file or save each list into separate files.
+
+## Create List Options
+
+When creating a list, the tool supports:
+
+- List title
+- Number of lists to create (batch creation)
+- Country preset or manual country codes
+- Optional region, city, and ISP filters
+- Ports per list (up to 1000)
+- Optional whitelist IPs
+- Proxy format selection for generated output
 
 ## Country Presets
 
-The tool includes predefined country presets for:
+Built-in presets:
 - Worldwide
 - Europe
 - Asia
@@ -70,45 +98,17 @@ The tool includes predefined country presets for:
 - North America
 - Africa
 
-## Configuration
+You can also enter country codes manually (comma-separated).
 
-### API Key Storage
-- The API key is stored in `api_key.txt` for future use
-- You can manually edit this file or let the program create it
+## Files and Storage
 
-### Previous Countries
-- Used countries are stored in `previous_countries.json`
-- This helps in tracking and reusing country configurations
+- `api_key.txt`: stored API key for future runs
+- `Results/`: downloaded/generated proxy files
 
-## Error Handling
+File names are generated from list titles and selected countries where possible.
 
-The tool includes comprehensive error handling for:
-- API connection issues
-- Invalid inputs
-- File operations
-- API response errors
+## Notes
 
-## Security
-
-- API keys are stored locally
-- Supports IP whitelisting for proxy access
-- Secure API communication
-
-## Contributing
-
-Feel free to submit issues and enhancement requests!
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For support, please:
-1. Check the documentation
-2. Review existing issues
-3. Create a new issue if needed
-
-## Disclaimer
-
-This tool is not affiliated with ProxySeller. It is an independent tool for managing ProxySeller services.
+- The tool uses ProxySeller API endpoints under `resident`.
+- API and network errors are handled and printed in CLI output.
+- This project is an independent tool and is not affiliated with ProxySeller.
