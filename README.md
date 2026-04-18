@@ -27,8 +27,10 @@ It supports listing, downloading, creating, renaming, and deleting lists through
 pip install -r requirements.txt
 ```
 
-Current dependency:
-- `requests>=2.28.0`
+Current dependencies:
+- `requests`
+- `python-dotenv`
+- `rich`
 
 ## Quick Start
 
@@ -38,7 +40,9 @@ Run:
 python main.py
 ```
 
-On first launch, the app asks for your ProxySeller API key and stores it in `api_key.txt`.
+On first launch, the app asks for your ProxySeller API key and securely stores it in a `.env` file (`PROXY_SELLER_API_KEY`). It also supports reading from an existing `api_key.txt` for backwards compatibility.
+
+The CLI interface has been upgraded with the `rich` library to support colored output, interactive menus, and progress bars.
 
 ## Menu Actions
 
@@ -102,7 +106,9 @@ You can also enter country codes manually (comma-separated).
 
 ## Files and Storage
 
-- `api_key.txt`: stored API key for future runs
+- `.env`: securely stores the `PROXY_SELLER_API_KEY`
+- `api_key.txt`: fallback/legacy storage for the API key
+- `app.log`: log file for runtime information and errors
 - `Results/`: downloaded/generated proxy files
 
 File names are generated from list titles and selected countries where possible.
