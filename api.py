@@ -10,8 +10,9 @@ class ProxySellerClient:
     API_VERSION = "v1"
     BASE_DOMAIN = "https://proxy-seller.com/personal/api"
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, timeout: int = 30):
         self.api_key = api_key
+        self.timeout = timeout
         self.base_url = f'{self.BASE_DOMAIN}/{self.API_VERSION}/{self.api_key}/resident'
         self.session = self._create_session()
 
@@ -20,6 +21,7 @@ class ProxySellerClient:
         session.headers.update({
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         })
         return session
 
@@ -27,7 +29,7 @@ class ProxySellerClient:
         """HTTP request to resident API relative to base_url (e.g. lists, list/add)."""
         url = f"{self.base_url}/{endpoint}"
         try:
-            response = self.session.request(method, url, **kwargs)
+            response = self.session.request(method, url, timeout=self.timeout, **kwargs)
             # Raise exception for non-2xx statuses (except 400s which might hold API errors)
             if response.status_code >= 500:
                 response.raise_for_status()
@@ -77,7 +79,7 @@ class ProxySellerClient:
             'listId': list_id
         }
         try:
-            response = self.session.get(url, params=params)
+            response = self.session.get(url, params=params, timeout=self.timeout)
             return response
         except requests.RequestException as e:
             logger.error(f"Download failed for list {list_id}: {str(e)}")
@@ -112,3 +114,13 @@ class ProxySellerClient:
     def delete_list(self, list_id: str) -> APIResponse:
         data = {"id": list_id}
         return self._make_request("DELETE", "list/delete", json=data)
+
+    def get_consumption(self, date_start: str, date_end: str, login: Optional[str] = None) -> APIResponse:
+        """Get traffic consumption for a specific period"""
+        data = {
+            "date_start": date_start,
+            "date_end": date_end
+        }
+        if login:
+            data["login"] = login
+        return self._make_request("POST", "consumption", json=data)

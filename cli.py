@@ -1,7 +1,9 @@
 import os
 import json
 import logging
+import re
 from typing import List, Dict
+from datetime import datetime, timedelta
 
 from rich.console import Console
 from rich.table import Table
@@ -12,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from api import ProxySellerClient
 from models import ExportFormat, ProxyFormat
 from utils import parse_user_selection, extract_countries
+from locales import t, set_language
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -25,42 +28,56 @@ class ProxySellerCLI:
         os.makedirs(self.results_dir, exist_ok=True)
         return os.path.join(self.results_dir, filename)
 
+    def change_language(self):
+        console.print("Select language / Выберите язык:")
+        console.print("1. English")
+        console.print("2. Русский")
+        choice = console.input("[1/2]: ").strip()
+        if choice == "2":
+            set_language("ru")
+            console.print("[green]Язык изменен на Русский.[/green]")
+        else:
+            set_language("en")
+            console.print("[green]Language changed to English.[/green]")
+
     def display_menu(self):
         console.print("\n")
         menu_text = (
-            "1. Получить существующие списки IP\n"
-            "2. Скачать прокси из существующего списка\n"
-            "3. Создать новый список (или несколько)\n"
-            "4. Переименовать список\n"
-            "5. Удалить списки\n"
-            "0. Выход"
+            f"{t('menu_1')}\n"
+            f"{t('menu_2')}\n"
+            f"{t('menu_3')}\n"
+            f"{t('menu_4')}\n"
+            f"{t('menu_5')}\n"
+            f"{t('menu_6')}\n"
+            f"{t('menu_7')}\n"
+            f"{t('menu_0')}"
         )
-        console.print(Panel(menu_text, title="ProxySeller API Manager", border_style="cyan"))
-        return console.input("[bold cyan]Выберите опцию:[/bold cyan] ")
+        console.print(Panel(menu_text, title=t("menu_title"), border_style="cyan"))
+        return console.input(t("menu_prompt"))
 
     def display_lists(self, lists: List[Dict]) -> List[Dict]:
         """Display lists in a formatted rich table."""
         if not lists:
-            console.print("[yellow]Списков прокси не найдено или произошла ошибка при их получении.[/yellow]")
+            console.print(t("lists_not_found"))
             return []
 
-        table = Table(title="Доступные списки прокси", show_header=True, header_style="bold magenta")
-        table.add_column("№", style="cyan", justify="right")
-        table.add_column("ID", style="dim")
-        table.add_column("Название", style="green")
-        table.add_column("Страны", style="yellow")
+        table = Table(title=t("lists_title"), show_header=True, header_style="bold magenta")
+        table.add_column(t("col_num"), style="cyan", justify="right")
+        table.add_column(t("col_id"), style="dim")
+        table.add_column(t("col_name"), style="green")
+        table.add_column(t("col_countries"), style="yellow")
 
         for i, item in enumerate(lists, 1):
             try:
                 list_id = item.get('id', 'N/A')
-                title = item.get('title', 'Без названия')
+                title = item.get('title', t("no_name"))
                 countries = extract_countries(item.get("geo", []))
-                countries_str = ", ".join(countries) if countries else "Не указано"
+                countries_str = ", ".join(countries) if countries else t("not_specified")
                 
                 table.add_row(str(i), str(list_id), str(title), str(countries_str))
             except Exception as e:
                 logger.error(f"Error displaying item: {e}")
-                table.add_row(str(i), "-", "[red]Ошибка отображения списка[/red]", "-")
+                table.add_row(str(i), "-", t("list_display_error"), "-")
                 
         console.print(table)
         return lists
@@ -72,41 +89,41 @@ class ProxySellerCLI:
         if not available_lists:
             return
 
-        console.print("\n[bold]Вы можете выбрать списки следующими способами:[/bold]")
-        console.print("1. Отдельные номера через запятую (например: [cyan]1,3,5[/cyan])")
-        console.print("2. Диапазон в квадратных скобках (например: [cyan][10, 20][/cyan])")
-        selection_input = console.input("\n[bold cyan]Выберите номера списков для скачивания прокси:[/bold cyan] ")
+        console.print(t("select_ways"))
+        console.print(t("select_way_1"))
+        console.print(t("select_way_2"))
+        selection_input = console.input(t("select_lists_dl"))
 
         valid_selections = parse_user_selection(selection_input, len(available_lists))
         if not valid_selections:
-            console.print("[red]Ошибка: Не выбрано ни одного действительного списка.[/red]")
+            console.print(t("invalid_selection"))
             return
 
-        console.print("\n[bold]Выберите формат прокси:[/bold]")
-        console.print("1. [cyan]login:password@host:port[/cyan] (default)")
-        console.print("2. [cyan]login:password:host:port[/cyan]")
-        console.print("3. [cyan]host:port:login:password[/cyan]")
-        console.print("4. [cyan]host:port@login:password[/cyan]")
+        console.print(t("select_format"))
+        console.print(t("format_1"))
+        console.print(t("format_2"))
+        console.print(t("format_3"))
+        console.print(t("format_4"))
         
-        format_choice = console.input("Выберите формат [dim][1][/dim]: ") or "1"
+        format_choice = console.input(t("format_choice")) or "1"
         try:
             proxy_format = ProxyFormat(int(format_choice))
         except ValueError:
             proxy_format = ProxyFormat.LOGIN_PASS_HOST_PORT
 
-        console.print("\n[bold]Выберите формат экспорта:[/bold]")
-        console.print("1. [cyan]txt[/cyan] (default)")
-        console.print("2. [cyan]csv[/cyan]")
-        console.print("3. [cyan]json[/cyan]")
+        console.print(t("select_export"))
+        console.print(t("export_1"))
+        console.print(t("export_2"))
+        console.print(t("export_3"))
         
-        export_choice = console.input("Выберите формат [dim][1][/dim]: ") or "1"
+        export_choice = console.input(t("export_choice")) or "1"
         export_type = ExportFormat.TXT
         if export_choice == "2":
             export_type = ExportFormat.CSV
         elif export_choice == "3":
             export_type = ExportFormat.JSON
 
-        merge_files = console.input("\nОбъединить все прокси в один файл? (y/n, по умолчанию: y): ").lower() != 'n'
+        merge_files = console.input(t("merge_files")).lower() != 'n'
 
         all_proxies = []
         selected_list_names = []
@@ -118,7 +135,7 @@ class ProxySellerCLI:
             TextColumn("[progress.description]{task.description}"),
             transient=True
         ) as progress:
-            task = progress.add_task("[green]Скачивание прокси...", total=len(valid_selections))
+            task = progress.add_task(t("dl_progress"), total=len(valid_selections))
 
             for selection in valid_selections:
                 selected_list = available_lists[selection - 1]
@@ -127,7 +144,7 @@ class ProxySellerCLI:
                 countries = extract_countries(selected_list.get("geo", []))
                 countries_str = "_".join(countries) if countries else "no_country"
 
-                progress.update(task, description=f"Загрузка прокси из '{list_title}'...")
+                progress.update(task, description=t("dl_list_progress", title=list_title))
                 response = self.api.download_proxies_from_list(list_id, export_type)
                 
                 if response and response.status_code == 200:
@@ -175,12 +192,12 @@ class ProxySellerCLI:
                                 logger.error(f"Error saving JSON: {e}")
                                 with open(filename, "w", encoding="utf-8") as file:
                                     file.write(formatted_content)
-                        console.print(f"[green]✔[/green] Список '{list_title}' сохранен в '{filename}'.")
+                        console.print(t("dl_success", title=list_title, filename=filename))
                     
                     successful_downloads += 1
                 else:
                     code = response.status_code if response else "Unknown"
-                    console.print(f"[red]✖ Ошибка при загрузке '{list_title}'. Код: {code}[/red]")
+                    console.print(t("dl_error", title=list_title, code=code))
 
                 progress.advance(task)
 
@@ -193,11 +210,11 @@ class ProxySellerCLI:
             try:
                 with open(merged_filename, "w", encoding="utf-8") as file:
                     file.write("\n".join(all_proxies))
-                console.print(f"\n[bold green]✔ Все прокси объединены в файл '{merged_filename}'.[/bold green]")
+                console.print(t("merged_success", filename=merged_filename))
             except Exception as e:
-                console.print(f"[red]Ошибка при сохранении файла: {e}[/red]")
+                console.print(t("file_save_error", error=e))
 
-        console.print(f"\n[cyan]Обработано {successful_downloads} из {len(valid_selections)} выбранных списков.[/cyan]")
+        console.print(t("processed_count", success=successful_downloads, total=len(valid_selections)))
 
     def create_lists(self):
         """Interactive create lists process"""
@@ -210,47 +227,47 @@ class ProxySellerCLI:
             "6": {"name": "Africa", "countries": "DZ,AO,BJ,BW,BI,BF,GA,GM,GH,GN,GW,DJ,EG,ZM,CV,CM,KE,KM,CI,LS,LR,LY,MU,MR,MW,ML,MA,MZ,NA,NE,NG,RW,ST,SC,SN,SO,SD,SL,TZ,TG,TN,UG,CF,TD,PG,GQ,ER,ET,ZA,SS"}
         }
 
-        console.print("\n[bold magenta]=== Создание нового списка прокси ===[/bold magenta]")
-        title = console.input("[bold cyan]Введите название списка:[/bold cyan] ")
+        console.print(t("create_title"))
+        title = console.input(t("enter_title"))
         
         try:
-            num_lists = int(console.input("[bold cyan]Сколько списков вы хотите создать (для получения более 1000 прокси)? [dim][1][/dim]:[/bold cyan] ") or "1")
+            num_lists = int(console.input(t("num_lists")) or "1")
             num_lists = max(1, num_lists)
         except ValueError:
             num_lists = 1
 
-        console.print("\n[bold]Предустановленные паки стран:[/bold]")
+        console.print(t("preset_countries"))
         for key, preset in country_presets.items():
             console.print(f"[cyan]{key}[/cyan]. {preset['name']}")
-        console.print("[cyan]0[/cyan]. Ручной ввод стран (по умолчанию)")
+        console.print(t("manual_countries"))
 
-        preset_choice = console.input("\n[bold cyan]Выберите пак или 0 для ручного ввода:[/bold cyan] ").strip()
+        preset_choice = console.input(t("preset_choice")).strip()
         
         if preset_choice in country_presets:
             country = country_presets[preset_choice]["countries"]
-            console.print(f"Выбран пак: [green]{country_presets[preset_choice]['name']}[/green]")
+            console.print(t("selected_preset", name=country_presets[preset_choice]['name']))
         else:
-            country = console.input("[bold cyan]Введите код или коды нескольких стран через запятую\n(подсказка: коды стран можно найти на https://www.iban.com/country-codes):[/bold cyan] ").upper().replace(" ", "")
+            country = console.input(t("enter_countries")).upper().replace(" ", "")
 
-        region = console.input("[bold cyan]Введите регион (или оставьте пустым):[/bold cyan] ")
-        city = console.input("[bold cyan]Введите город (или оставьте пустым):[/bold cyan] ")
-        isp = console.input("[bold cyan]Введите провайдера (или оставьте пустым):[/bold cyan] ")
+        region = console.input(t("enter_region"))
+        city = console.input(t("enter_city"))
+        isp = console.input(t("enter_isp"))
         
         try:
-            num_ports = int(console.input("[bold cyan]Введите количество портов на список (максимум и по умолчанию 1000):[/bold cyan] ") or "1000")
+            num_ports = int(console.input(t("num_ports")) or "1000")
             num_ports = min(1000, max(1, num_ports))
         except ValueError:
             num_ports = 1000
             
-        whitelist = console.input("[bold cyan]Введите IP-адреса для белого списка через запятую (или оставьте пустым):[/bold cyan] ")
+        whitelist = console.input(t("whitelist_ip"))
         
-        console.print("\n[bold]Выберите формат прокси:[/bold]")
-        console.print("1. [cyan]login:password@host:port[/cyan] (default)")
-        console.print("2. [cyan]login:password:host:port[/cyan]")
-        console.print("3. [cyan]host:port:login:password[/cyan]")
-        console.print("4. [cyan]host:port@login:password[/cyan]")
+        console.print(t("select_format"))
+        console.print(t("format_1"))
+        console.print(t("format_2"))
+        console.print(t("format_3"))
+        console.print(t("format_4"))
         
-        format_choice = console.input("[bold cyan]Выберите формат [dim][1][/dim]:[/bold cyan] ") or "1"
+        format_choice = console.input(t("format_choice")) or "1"
         try:
             proxy_format = ProxyFormat(int(format_choice))
         except ValueError:
@@ -264,21 +281,21 @@ class ProxySellerCLI:
             TextColumn("[progress.description]{task.description}"),
             transient=True
         ) as progress:
-            task = progress.add_task("[green]Создание списков...", total=num_lists)
+            task = progress.add_task(t("create_progress"), total=num_lists)
 
             for i in range(num_lists):
                 list_title = title if num_lists == 1 else f"{title} #{i + 1}"
-                progress.update(task, description=f"Создание списка '{list_title}'...")
+                progress.update(task, description=t("create_list_progress", title=list_title))
                 response = self.api.create_list(list_title, country, region, city, isp, whitelist, num_ports)
                 
                 if response.success and isinstance(response.data, dict):
                     proxy_data = response.data
-                    console.print(f"[green]✔[/green] Список '{list_title}' успешно создан.")
+                    console.print(t("create_success", title=list_title))
                     proxy_list = self._generate_proxy_list(proxy_data, num_ports, proxy_format)
                     all_proxy_lists.extend(proxy_list)
                     total_proxies += len(proxy_list)
                 else:
-                    console.print(f"[red]✖ Ошибка создания списка '{list_title}': {response.error}[/red]")
+                    console.print(t("create_error", title=list_title, error=response.error))
                 
                 progress.advance(task)
 
@@ -288,9 +305,9 @@ class ProxySellerCLI:
             try:
                 with open(filename, "w", encoding="utf-8") as file:
                     file.write("\n".join(all_proxy_lists))
-                console.print(f"\n[bold green]Всего создано {total_proxies} прокси. Сохранены в '{filename}'.[/bold green]")
+                console.print(t("total_created", total=total_proxies, filename=filename))
             except Exception as e:
-                console.print(f"[red]Ошибка сохранения файла: {e}[/red]")
+                console.print(t("file_save_error", error=e))
 
     def _generate_proxy_list(self, proxy_data: dict, num_ports: int, format_type: ProxyFormat) -> List[str]:
         login = proxy_data.get("login")
@@ -324,21 +341,21 @@ class ProxySellerCLI:
             return
 
         try:
-            selection = int(console.input("\n[bold cyan]Выберите номер списка:[/bold cyan] "))
+            selection = int(console.input(t("select_list_num")))
             if selection < 1 or selection > len(available_lists):
-                console.print("[red]Неверный номер.[/red]")
+                console.print(t("invalid_num"))
                 return
                 
             selected_list = available_lists[selection - 1]
-            new_title = console.input("[bold cyan]Введите новое название:[/bold cyan] ")
+            new_title = console.input(t("enter_new_title"))
             
             response = self.api.rename_list(selected_list.get('id'), new_title)
             if response.success:
-                console.print(f"[bold green]Список переименован в '{new_title}'.[/bold green]")
+                console.print(t("rename_success", title=new_title))
             else:
-                console.print(f"[bold red]Ошибка:[/bold red] {response.error}")
+                console.print(t("error_prefix", error=response.error))
         except ValueError:
-            console.print("[red]Неверный формат ввода.[/red]")
+            console.print(t("invalid_format"))
 
     def delete_list(self):
         lists = self.api.get_lists()
@@ -346,26 +363,26 @@ class ProxySellerCLI:
         if not available_lists:
             return
 
-        console.print("\n[bold]Вы можете выбрать списки следующими способами:[/bold]")
-        console.print("1. Отдельные номера через запятую (например: [cyan]1,3,5[/cyan])")
-        console.print("2. Диапазон в квадратных скобках (например: [cyan][10, 20][/cyan])")
-        selection_input = console.input("\n[bold cyan]Выберите номера списков для удаления:[/bold cyan] ")
+        console.print(t("select_ways"))
+        console.print(t("select_way_1"))
+        console.print(t("select_way_2"))
+        selection_input = console.input(t("select_lists_del"))
 
         valid_selections = parse_user_selection(selection_input, len(available_lists))
         
         if not valid_selections:
             return
             
-        console.print("\n[bold]Выбранные списки для удаления:[/bold]")
+        console.print(t("selected_del"))
         selected_lists = []
         for selection in valid_selections:
             selected_list = available_lists[selection - 1]
             selected_lists.append(selected_list)
             console.print(f"- [yellow]{selected_list.get('title', 'N/A')}[/yellow] (ID: {selected_list.get('id')})")
             
-        confirm = console.input(f"\n[bold red]Удалить {len(selected_lists)} списков? (y/n):[/bold red] ")
+        confirm = console.input(t("confirm_del", count=len(selected_lists)))
         if confirm.lower() != 'y':
-            console.print("[yellow]Операция отменена.[/yellow]")
+            console.print(t("cancel_op"))
             return
             
         deleted_count = 0
@@ -375,15 +392,166 @@ class ProxySellerCLI:
             TextColumn("[progress.description]{task.description}"),
             transient=True
         ) as progress:
-            task = progress.add_task("[red]Удаление списков...", total=len(selected_lists))
+            task = progress.add_task(t("del_progress"), total=len(selected_lists))
 
             for l in selected_lists:
                 response = self.api.delete_list(l.get('id'))
                 if response.success:
-                    console.print(f"[green]✔[/green] Список '{l.get('title')}' удален.")
+                    console.print(t("del_success", title=l.get('title')))
                     deleted_count += 1
                 else:
-                    console.print(f"[red]✖ Ошибка удаления '{l.get('title')}': {response.error}[/red]")
+                    console.print(t("del_error", title=l.get('title'), error=response.error))
                 progress.advance(task)
                 
-        console.print(f"\n[bold cyan]Удалено {deleted_count} из {len(selected_lists)} списков.[/bold cyan]")
+        console.print(t("del_count", deleted=deleted_count, total=len(selected_lists)))
+
+    def get_consumption(self):
+        console.print(t("cons_title"))
+        console.print(t("cons_period"))
+        console.print(t("period_1"))
+        console.print(t("period_2"))
+        console.print(t("period_3"))
+        console.print(t("period_4"))
+        
+        period_choice = console.input(t("your_choice")) or "1"
+        
+        now = datetime.now()
+        
+        if period_choice == "1":
+            date_start = (now - timedelta(days=1)).strftime("%d.%m.%Y")
+            date_end = now.strftime("%d.%m.%Y")
+        elif period_choice == "2":
+            date_start = (now - timedelta(days=7)).strftime("%d.%m.%Y")
+            date_end = now.strftime("%d.%m.%Y")
+        elif period_choice == "3":
+            date_start = (now - timedelta(days=30)).strftime("%d.%m.%Y")
+            date_end = now.strftime("%d.%m.%Y")
+        elif period_choice == "4":
+            date_start = console.input(t("date_start"))
+            date_end = console.input(t("date_end"))
+        else:
+            date_start = (now - timedelta(days=1)).strftime("%d.%m.%Y")
+            date_end = now.strftime("%d.%m.%Y")
+            
+        login = console.input(t("login_filter"))
+        login_filter = login if login else None
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True
+        ) as progress:
+            progress.add_task(t("fetch_cons_progress"), total=None)
+            response = self.api.get_consumption(date_start, date_end, login=login_filter)
+            
+            progress.add_task(t("fetch_lists_progress"), total=None)
+            existing_lists = self.api.get_lists()
+            
+        if response.success:
+            console.print(t("cons_data_title", start=date_start, end=date_end))
+            data = response.data
+            if data:
+                # Маппинг логинов в названия
+                login_to_title = {}
+                for lst in existing_lists:
+                    l_login = lst.get('login')
+                    l_title = lst.get('title')
+                    if l_login and l_title:
+                        login_to_title[l_login] = l_title
+
+                # Общая статистика
+                summary_text = (
+                    t("bought_traffic", bytes=data.get('orders_bytes_formated', 'N/A'), amount=data.get('orders_amount', 'N/A')) +
+                    t("used_traffic", bytes=data.get('used_bytes_formated', 'N/A'), amount=data.get('used_orders_amount', 'N/A')) +
+                    t("price_per_gb", price=data.get('price_per_gb', 'N/A'))
+                )
+                console.print(Panel(summary_text, title=t("cons_summary"), border_style="blue"))
+                
+                # Таблица по прокси
+                lists_data = data.get('lists', [])
+                if lists_data:
+                    table = Table(title=t("cons_details"), show_header=True, header_style="bold magenta")
+                    table.add_column(t("col_group"), style="cyan")
+                    table.add_column(t("col_used"), style="yellow", justify="right")
+                    table.add_column(t("col_cost"), style="green", justify="right")
+                    
+                    # Группировка
+                    grouped_data = {}
+                    for item in lists_data:
+                        login = item.get('login', 'N/A')
+                        title = login_to_title.get(login)
+                        
+                        if title:
+                            # Ищем ' #1', ' #2' и т.д. в конце строки
+                            match = re.search(r'^(.*?)\s+#\d+$', title)
+                            base_name = match.group(1).strip() if match else title
+                        else:
+                            base_name = login
+                            
+                        bytes_val = int(item.get('bytes', 0))
+                        cost_str = str(item.get('cost', '$0')).replace('$', '')
+                        try:
+                            cost_val = float(cost_str)
+                        except ValueError:
+                            cost_val = 0.0
+                            
+                        if base_name not in grouped_data:
+                            grouped_data[base_name] = {'bytes': 0, 'cost': 0.0, 'logins': []}
+                        
+                        grouped_data[base_name]['bytes'] += bytes_val
+                        grouped_data[base_name]['cost'] += cost_val
+                        grouped_data[base_name]['logins'].append(login)
+                        
+                    final_list = []
+                    for base_name, grp in grouped_data.items():
+                        final_list.append({
+                            'base_name': base_name,
+                            'bytes': grp['bytes'],
+                            'cost': grp['cost'],
+                            'count': len(grp['logins']),
+                            'logins': grp['logins']
+                        })
+                        
+                    # Сортируем по убыванию расхода
+                    final_list.sort(key=lambda x: x['bytes'], reverse=True)
+                    
+                    for item in final_list:
+                        base_name = item['base_name']
+                        count = item['count']
+                        
+                        if count > 1:
+                            display_name = f"{base_name}{t('lists_count_dim', count=count)}"
+                        else:
+                            login = item['logins'][0]
+                            if base_name == login:
+                                display_name = login
+                            else:
+                                display_name = f"{base_name}{t('login_dim', login=login)}"
+                                
+                        # Форматируем байты
+                        size = float(item['bytes'])
+                        power = 1024.0
+                        n = 0
+                        power_labels = {0: 'B', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
+                        while size >= power and n < 4:
+                            size /= power
+                            n += 1
+                        # Округляем до 1 знака после запятой
+                        formatted_bytes = f"{size:.1f} {power_labels[n]}"
+                        
+                        # Форматируем стоимость
+                        if item['cost'] == 0:
+                            formatted_cost = "$0"
+                        else:
+                            formatted_cost = f"${item['cost']:.2f}"
+                        
+                        table.add_row(
+                            display_name,
+                            formatted_bytes,
+                            formatted_cost
+                        )
+                    console.print(table)
+            else:
+                console.print(t("no_data"))
+        else:
+            console.print(t("fetch_error", error=response.error))

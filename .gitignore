@@ -1,5 +1,7 @@
 # Secrets / local runtime
 api_key.txt
+settings.json
+.env
 
 # Python cache / bytecode
 __pycache__/
